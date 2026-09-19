@@ -7,7 +7,6 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { LibraryProvider } from "@/features/albums/LibraryProvider"
 import { ReposProvider } from "@/features/repos/ReposProvider"
 import { TodosProvider } from "@/features/todos/TodosProvider"
-import { DashboardPage } from "@/pages/DashboardPage"
 import { PhotosLayout } from "@/pages/PhotosLayout"
 import { RepoPage } from "@/pages/RepoPage"
 import { TodoPage } from "@/pages/TodoPage"
@@ -33,7 +32,10 @@ export default function App() {
                 <SiteHeader />
                 <div className="flex min-h-0 flex-1 flex-col">
                   <Routes>
-                    <Route path="/" element={<DashboardPage />} />
+                    <Route
+                      path="/"
+                      element={<Navigate to="/todos" replace />}
+                    />
                     <Route path="/photos" element={<PhotosLayout />}>
                       <Route index element={<AllPhotosView />} />
                       <Route

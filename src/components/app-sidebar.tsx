@@ -12,7 +12,6 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
 import {
-  LayoutDashboardIcon,
   ListTodoIcon,
   CameraIcon,
   FolderGitIcon,
@@ -22,11 +21,6 @@ import {
 
 const data = {
   navMain: [
-    {
-      title: "Dashboard",
-      url: "/",
-      icon: <LayoutDashboardIcon />,
-    },
     {
       title: "Photos",
       url: "/photos",

@@ -38,11 +38,7 @@
 - 仓库可分类、打标签、收藏,状态分为 `watching` / `evaluating` / `archived`
 - 支持打开应用时自动同步,也可手动刷新单个仓库
 
-### 📊 Dashboard
-
-- 概览卡片、交互式面积图与数据表格(TanStack Table + Recharts)
-
-### 其他
+### 🧩 其他
 
 - 亮色 / 暗色 / 跟随系统主题
 - 应用内点击的外链自动交由系统浏览器打开,不在应用内导航
@@ -60,8 +56,6 @@
 | 路由 | React Router 7(`HashRouter`) |
 | 样式 | Tailwind CSS 4 + shadcn/ui(`base-nova` 风格)+ lucide-react |
 | 组件基座 | Base UI、Radix 系原语、dnd-kit(拖拽排序) |
-| 图表 / 表格 | Recharts、TanStack Table |
-| 表单校验 | Zod |
 | Rust 后端 | `image`、`kamadak-exif`、`reqwest`、`chrono`、`serde` |
 | 包管理器 | Bun(CI 使用 1.3.14) |
 
@@ -114,7 +108,6 @@ bun run tauri build
 memo/
 ├─ .github/workflows/release.yml   # 打 tag 自动构建并发布
 ├─ src/                            # React 前端
-│  ├─ app/dashboard/data.json      # Dashboard 示例数据
 │  ├─ components/                  # 通用组件与 shadcn/ui 组件
 │  ├─ features/                    # 领域模块(类型 + Context + UI)
 │  │  ├─ albums/                   # 相册元数据与图库状态
@@ -165,7 +158,6 @@ memo/
 
 | 命令 | 作用 |
 | --- | --- |
-| `greet` | 示例命令(模板遗留) |
 | `scan_library` | 递归扫描目录并按子目录分组为相册 |
 | `read_exif` | 读取单张图片的 EXIF 信息 |
 | `load_album_meta` / `save_album_meta` | 读取 / 保存相册元数据 |

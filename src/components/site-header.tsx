@@ -3,7 +3,6 @@ import { Separator } from "@/components/ui/separator"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 
 const TITLES: Record<string, string> = {
-  "/": "Dashboard",
   "/todos": "Todos",
   "/repos": "GitHub 项目",
 }

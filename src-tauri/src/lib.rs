@@ -1,4 +1,4 @@
-    use std::collections::HashMap;
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::time::UNIX_EPOCH;
@@ -8,12 +8,6 @@ use tauri::webview::PageLoadEvent;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_log::{Target, TargetKind};
 use tauri_plugin_opener::OpenerExt;
-
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
 
 const PHOTO_EXTENSIONS: [&str; 6] = ["jpg", "jpeg", "png", "webp", "gif", "bmp"];
 
@@ -837,7 +831,6 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(external_navigation_plugin())
         .invoke_handler(tauri::generate_handler![
-            greet,
             read_exif,
             scan_library,
             load_album_meta,
