@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::time::UNIX_EPOCH;
@@ -42,45 +41,81 @@ fn modified_millis(meta: &fs::Metadata) -> Option<u64> {
         .map(|d| d.as_millis() as u64)
 }
 
-fn collect_photos(dir: &Path, out: &mut Vec<PhotoMeta>) {
-    let entries = match fs::read_dir(dir) {
-        Ok(entries) => entries,
-        Err(_) => return,
-    };
+fn photo_meta(path: &Path, meta: &fs::Metadata) -> PhotoMeta {
+    // Read only the header to get dimensions cheaply.
+    let (width, height) = image::image_dimensions(path).unwrap_or((0, 0));
+    let path_str = path.to_string_lossy().to_string();
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| path_str.clone());
 
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let meta = match entry.metadata() {
-            Ok(meta) => meta,
-            Err(_) => continue,
-        };
+    PhotoMeta {
+        id: path_str.clone(),
+        path: path_str,
+        name,
+        width,
+        height,
+        size: meta.len(),
+        modified: modified_millis(meta),
+    }
+}
 
-        if meta.is_dir() {
-            collect_photos(&path, out);
-            continue;
+/// Maximum recursion depth, protects against junction/symlink loops on Windows.
+const MAX_SCAN_DEPTH: usize = 32;
+
+/// 递归构建与磁盘目录结构一致的相册树。
+/// 每个节点的 `photos` 只包含该目录直接存放的图片，`children` 为子目录。
+fn build_album_node(dir: &Path, depth: usize) -> AlbumNode {
+    let mut photos: Vec<PhotoMeta> = Vec::new();
+    let mut children: Vec<AlbumNode> = Vec::new();
+
+    if depth <= MAX_SCAN_DEPTH {
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let Ok(file_type) = entry.file_type() else {
+                    continue;
+                };
+
+                // 不跟随符号链接/目录联接，避免环形目录导致无限递归。
+                if file_type.is_symlink() {
+                    continue;
+                }
+
+                if file_type.is_dir() {
+                    children.push(build_album_node(&path, depth + 1));
+                } else if file_type.is_file() && is_photo(&path) {
+                    if let Ok(meta) = entry.metadata() {
+                        photos.push(photo_meta(&path, &meta));
+                    }
+                }
+            }
         }
+    }
 
-        if !is_photo(&path) {
-            continue;
-        }
+    photos.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    // 整棵子树都没有照片的目录直接丢掉，让侧栏只保留有内容的层级。
+    children.retain(|child| child.total_photo_count > 0);
+    children.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
 
-        // Read only the header to get dimensions cheaply.
-        let (width, height) = image::image_dimensions(&path).unwrap_or((0, 0));
-        let path_str = path.to_string_lossy().to_string();
-        let name = path
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| path_str.clone());
+    let photo_count = photos.len();
+    let total_photo_count =
+        photo_count + children.iter().map(|child| child.total_photo_count).sum::<usize>();
+    let path_str = dir.to_string_lossy().to_string();
+    let name = dir
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| path_str.clone());
 
-        out.push(PhotoMeta {
-            id: path_str.clone(),
-            path: path_str,
-            name,
-            width,
-            height,
-            size: meta.len(),
-            modified: modified_millis(&meta),
-        });
+    AlbumNode {
+        id: path_str.clone(),
+        name,
+        path: path_str,
+        photos,
+        children,
+        photo_count,
+        total_photo_count,
     }
 }
 
@@ -190,20 +225,35 @@ fn read_exif(path: String) -> Result<serde_json::Value, String> {
     Ok(serde_json::Value::Object(map))
 }
 
+/// 与磁盘目录结构一致的相册节点，photos 仅包含该目录直接存放的图片。
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct AlbumGroup {
+struct AlbumNode {
     id: String,
     name: String,
     path: String,
     photos: Vec<PhotoMeta>,
+    children: Vec<AlbumNode>,
+    photo_count: usize,
+    total_photo_count: usize,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RootScan {
+    root: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    node: Option<AlbumNode>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct LibraryScan {
-    root: String,
-    albums: Vec<AlbumGroup>,
+    roots: Vec<RootScan>,
+    total_photos: usize,
+    total_albums: usize,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -226,13 +276,10 @@ struct AlbumMeta {
     updated_at: Option<u64>,
 }
 
-const UNFILED_ALBUM_NAME: &str = "\u{672a}\u{5f52}\u{7c7b}";
-
-#[tauri::command]
-fn scan_library(app: AppHandle, root: String) -> Result<LibraryScan, String> {
-    let root_path = Path::new(&root);
+fn scan_root_inner(app: &AppHandle, root: &str) -> Result<AlbumNode, String> {
+    let root_path = Path::new(root);
     if !root_path.is_dir() {
-        return Err(format!("not a directory: {}", root));
+        return Err(format!("目录不存在或不可访问: {}", root));
     }
 
     // Allow the webview to load images from this whole tree via the asset protocol.
@@ -240,67 +287,82 @@ fn scan_library(app: AppHandle, root: String) -> Result<LibraryScan, String> {
         log::warn!("failed to extend asset protocol scope: {}", err);
     }
 
-    let mut photos = Vec::new();
-    collect_photos(root_path, &mut photos);
+    Ok(build_album_node(root_path, 0))
+}
 
-    let mut grouped: HashMap<String, Vec<PhotoMeta>> = HashMap::new();
-    let mut loose: Vec<PhotoMeta> = Vec::new();
-
-    for photo in photos {
-        let relative = Path::new(&photo.path).strip_prefix(root_path);
-        let components: Vec<_> = match relative {
-            Ok(rel) => rel.components().collect(),
-            Err(_) => {
-                loose.push(photo);
-                continue;
+fn scan_root(app: &AppHandle, root: &str) -> RootScan {
+    match scan_root_inner(app, root) {
+        Ok(node) => RootScan {
+            root: root.to_string(),
+            node: Some(node),
+            error: None,
+        },
+        Err(err) => {
+            log::warn!("failed to scan library root {}: {}", root, err);
+            RootScan {
+                root: root.to_string(),
+                node: None,
+                error: Some(err),
             }
-        };
-
-        if components.len() <= 1 {
-            // Directly under the root folder.
-            loose.push(photo);
-        } else {
-            let folder = components[0].as_os_str().to_string_lossy().to_string();
-            grouped.entry(folder).or_default().push(photo);
         }
     }
+}
 
-    let mut albums: Vec<AlbumGroup> = Vec::new();
+/// 统计树中真正含有照片的目录数量（即侧栏里可点击的相册数）。
+fn album_count(node: &AlbumNode) -> usize {
+    let own = usize::from(node.photo_count > 0);
+    own + node.children.iter().map(album_count).sum::<usize>()
+}
 
-    if !loose.is_empty() {
-        loose.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-        albums.push(AlbumGroup {
-            id: root.clone(),
-            name: UNFILED_ALBUM_NAME.to_string(),
-            path: root.clone(),
-            photos: loose,
-        });
-    }
+/// Scans every known library root. Roots are scanned in parallel and a failure in
+/// one root never prevents the others from being reported.
+#[tauri::command]
+fn scan_library(app: AppHandle, roots: Vec<String>) -> Result<LibraryScan, String> {
+    let scans: Vec<RootScan> = std::thread::scope(|scope| {
+        let handles: Vec<_> = roots
+            .iter()
+            .map(|root| {
+                let app = app.clone();
+                let root = root.clone();
+                scope.spawn(move || scan_root(&app, &root))
+            })
+            .collect();
 
-    for (folder, mut folder_photos) in grouped {
-        folder_photos.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-        let album_path = root_path.join(&folder);
-        let album_path_str = album_path.to_string_lossy().to_string();
-        albums.push(AlbumGroup {
-            id: album_path_str.clone(),
-            name: folder,
-            path: album_path_str,
-            photos: folder_photos,
-        });
-    }
+        handles
+            .into_iter()
+            .zip(roots.iter())
+            .map(|(handle, fallback)| {
+                handle.join().unwrap_or_else(|_| RootScan {
+                    root: fallback.clone(),
+                    node: None,
+                    error: Some("扫描时发生未知错误".to_string()),
+                })
+            })
+            .collect()
+    });
 
-    // Keep the virtual "unfiled" album first, then sort the rest by name.
-    let (unfiled, mut rest): (Vec<_>, Vec<_>) = albums
-        .into_iter()
-        .partition(|album| album.name == UNFILED_ALBUM_NAME);
-    rest.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-    let mut sorted = unfiled;
-    sorted.append(&mut rest);
+    let total_photos = scans
+        .iter()
+        .filter_map(|scan| scan.node.as_ref())
+        .map(|node| node.total_photo_count)
+        .sum();
+    let total_albums = scans
+        .iter()
+        .filter_map(|scan| scan.node.as_ref())
+        .map(album_count)
+        .sum();
 
-    log::info!("scanned library at {} into {} albums", root, sorted.len());
+    log::info!(
+        "scanned {} library roots ({} albums, {} photos)",
+        scans.len(),
+        total_albums,
+        total_photos
+    );
+
     Ok(LibraryScan {
-        root,
-        albums: sorted,
+        roots: scans,
+        total_photos,
+        total_albums,
     })
 }
 
@@ -715,7 +777,10 @@ async fn check_rate_limit(token: Option<String>) -> Result<RateLimit, String> {
 #[derive(Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 struct LibrarySettings {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    roots: Vec<String>,
+    /// Legacy single-root field, kept so older configs keep working.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     root: Option<String>,
 }
 
@@ -724,27 +789,54 @@ fn library_store_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
     Ok(dir.join("library.json"))
 }
 
-#[tauri::command]
-fn load_library_root(app: AppHandle) -> Result<Option<String>, String> {
-    let path = library_store_path(&app)?;
-    if !path.exists() {
-        return Ok(None);
-    }
-    let content = fs::read_to_string(&path).map_err(|e| e.to_string())?;
-    if content.trim().is_empty() {
-        return Ok(None);
-    }
-    let settings: LibrarySettings = serde_json::from_str(&content).map_err(|e| e.to_string())?;
-    Ok(settings.root)
+fn normalize_saved_roots(mut roots: Vec<String>) -> Vec<String> {
+    let mut seen = Vec::<String>::new();
+    roots.retain(|root| {
+        let trimmed = root.trim();
+        if trimmed.is_empty() {
+            return false;
+        }
+        let key = trimmed.replace('\\', "/").to_lowercase();
+        if seen.contains(&key) {
+            return false;
+        }
+        seen.push(key);
+        true
+    });
+    roots
 }
 
 #[tauri::command]
-fn save_library_root(app: AppHandle, root: Option<String>) -> Result<(), String> {
+fn load_library_roots(app: AppHandle) -> Result<Vec<String>, String> {
+    let path = library_store_path(&app)?;
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let content = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    if content.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    let settings: LibrarySettings = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+
+    let mut roots = normalize_saved_roots(settings.roots);
+    if roots.is_empty() {
+        if let Some(root) = settings.root {
+            roots = normalize_saved_roots(vec![root]);
+        }
+    }
+    Ok(roots)
+}
+
+#[tauri::command]
+fn save_library_roots(app: AppHandle, roots: Vec<String>) -> Result<(), String> {
     let path = library_store_path(&app)?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    let settings = LibrarySettings { root };
+    let settings = LibrarySettings {
+        roots: normalize_saved_roots(roots),
+        root: None,
+    };
     let content = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
     fs::write(&path, content).map_err(|e| e.to_string())?;
     Ok(())
@@ -843,8 +935,8 @@ pub fn run() {
             save_settings,
             fetch_repo,
             check_rate_limit,
-            load_library_root,
-            save_library_root,
+            load_library_roots,
+            save_library_roots,
             load_repo_categories,
             save_repo_categories
         ])
