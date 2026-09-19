@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react"
-import { FolderOpenIcon, ImageIcon } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { ImageIcon } from "lucide-react"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useLibrary } from "@/features/albums/LibraryContext"
 import { DateGroupedGrid } from "@/features/photos/DateGroupedGrid"
@@ -22,7 +21,7 @@ function LoadingGrid() {
 }
 
 export function AllPhotosView() {
-  const { allPhotos, sortKey, root, loading, openLibrary } = useLibrary()
+  const { allPhotos, sortKey, root, loading } = useLibrary()
   const [viewerIndex, setViewerIndex] = useState<number | null>(null)
 
   const groups = useMemo(
@@ -78,12 +77,6 @@ export function AllPhotosView() {
                 : "选择一个图库根文件夹,照片将按日期自动分组"}
             </p>
           </div>
-          {!root && (
-            <Button variant="outline" onClick={openLibrary}>
-              <FolderOpenIcon />
-              <span>打开图库文件夹</span>
-            </Button>
-          )}
         </div>
       )}
 
