@@ -21,7 +21,7 @@ function LoadingGrid() {
 }
 
 export function AllPhotosView() {
-  const { allPhotos, sortKey, root, loading } = useLibrary()
+  const { allPhotos, sortKey, roots, loading } = useLibrary()
   const [viewerIndex, setViewerIndex] = useState<number | null>(null)
 
   const groups = useMemo(
@@ -69,14 +69,15 @@ export function AllPhotosView() {
           </div>
           <div className="space-y-1">
             <p className="text-sm font-medium">
-              {root ? "图库中暂无照片" : "开始浏览你的照片"}
+              {roots.length > 0 ? "图库中暂无照片" : "开始浏览你的照片"}
             </p>
             <p className="text-xs text-muted-foreground">
-              {root
-                ? "该文件夹下没有找到受支持的图片"
-                : "选择一个图库根文件夹,照片将按日期自动分组"}
+              {roots.length > 0
+                ? "已添加的目录下没有找到受支持的图片"
+                : "添加一个或多个图片目录，照片将按日期自动分组"}
             </p>
           </div>
+
         </div>
       )}
 

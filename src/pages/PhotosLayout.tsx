@@ -1,6 +1,10 @@
 import { useState } from "react"
 import { Outlet } from "react-router-dom"
-import { FolderOpenIcon, PanelRightOpenIcon } from "lucide-react"
+import {
+  FolderPlusIcon,
+  PanelRightOpenIcon,
+  RefreshCwIcon,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Select,
@@ -21,31 +25,44 @@ const SORT_ITEMS: { label: string; value: SortKey }[] = [
 ]
 
 export function PhotosLayout() {
-  const { root, albums, allPhotos, loading, error, openLibrary, sortKey, setSortKey } =
-    useLibrary()
+  const {
+    roots,
+    albums,
+    allPhotos,
+    loading,
+    error,
+    addRoots,
+    reload,
+    sortKey,
+    setSortKey,
+  } = useLibrary()
   const [panelCollapsed, setPanelCollapsed] = useState(false)
 
   return (
     <div className="flex h-[calc(100dvh_-_var(--header-height))] flex-col overflow-hidden md:h-[calc(100dvh_-_var(--header-height)_-_1rem)]">
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-background/95 px-4 py-2.5 backdrop-blur supports-[backdrop-filter]:bg-background/75 lg:px-6">
-        <Button variant="outline" onClick={openLibrary} disabled={loading}>
-          <FolderOpenIcon />
-          <span>{root ? "更换图库" : "打开图库文件夹"}</span>
+        <Button variant="outline" onClick={() => void addRoots()} disabled={loading}>
+          <FolderPlusIcon />
+          <span>添加目录</span>
         </Button>
 
-        {root && (
-          <span
-            className="max-w-64 truncate text-xs text-muted-foreground"
-            title={root}
+        {roots.length > 0 && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => void reload()}
+            disabled={loading}
+            aria-label="重新扫描全部目录"
+            title="重新扫描全部目录"
           >
-            {root}
-          </span>
+            <RefreshCwIcon className={loading ? "animate-spin" : undefined} />
+          </Button>
         )}
 
         <div className="ml-auto flex items-center gap-2">
-          {root && !loading && (
+          {roots.length > 0 && !loading && (
             <span className="text-xs tabular-nums text-muted-foreground">
-              {allPhotos.length} 张 · {albums.length} 个相册
+              {allPhotos.length} 张 · {albums.length} 个相册 · {roots.length} 个目录
             </span>
           )}
           <Select
