@@ -1,23 +1,29 @@
 /* eslint-disable react-refresh/only-export-components */
 import * as React from "react"
 
-type Theme = "dark" | "light" | "system"
+export type Theme = "dark" | "light" | "system"
+export type Palette = "emerald" | "neutral" | "tangerine"
 type ResolvedTheme = "dark" | "light"
 
 type ThemeProviderProps = {
   children: React.ReactNode
   defaultTheme?: Theme
   storageKey?: string
+  defaultPalette?: Palette
+  paletteStorageKey?: string
   disableTransitionOnChange?: boolean
 }
 
 type ThemeProviderState = {
   theme: Theme
   setTheme: (theme: Theme) => void
+  palette: Palette
+  setPalette: (palette: Palette) => void
 }
 
 const COLOR_SCHEME_QUERY = "(prefers-color-scheme: dark)"
 const THEME_VALUES: Theme[] = ["dark", "light", "system"]
+const PALETTE_VALUES: Palette[] = ["emerald", "neutral", "tangerine"]
 
 const ThemeProviderContext = React.createContext<
   ThemeProviderState | undefined
@@ -29,6 +35,14 @@ function isTheme(value: string | null): value is Theme {
   }
 
   return THEME_VALUES.includes(value as Theme)
+}
+
+function isPalette(value: string | null): value is Palette {
+  if (value === null) {
+    return false
+  }
+
+  return PALETTE_VALUES.includes(value as Palette)
 }
 
 function getSystemTheme(): ResolvedTheme {
@@ -81,6 +95,8 @@ export function ThemeProvider({
   children,
   defaultTheme = "system",
   storageKey = "theme",
+  defaultPalette = "emerald",
+  paletteStorageKey = "palette",
   disableTransitionOnChange = true,
   ...props
 }: ThemeProviderProps) {
@@ -93,6 +109,15 @@ export function ThemeProvider({
     return defaultTheme
   })
 
+  const [palette, setPaletteState] = React.useState<Palette>(() => {
+    const storedPalette = localStorage.getItem(paletteStorageKey)
+    if (isPalette(storedPalette)) {
+      return storedPalette
+    }
+
+    return defaultPalette
+  })
+
   const setTheme = React.useCallback(
     (nextTheme: Theme) => {
       localStorage.setItem(storageKey, nextTheme)
@@ -100,6 +125,18 @@ export function ThemeProvider({
     },
     [storageKey]
   )
+
+  const setPalette = React.useCallback(
+    (nextPalette: Palette) => {
+      localStorage.setItem(paletteStorageKey, nextPalette)
+      setPaletteState(nextPalette)
+    },
+    [paletteStorageKey]
+  )
+
+  React.useEffect(() => {
+    document.documentElement.setAttribute("data-palette", palette)
+  }, [palette])
 
   const applyTheme = React.useCallback(
     (nextTheme: Theme) => {
@@ -185,16 +222,16 @@ export function ThemeProvider({
         return
       }
 
-      if (event.key !== storageKey) {
+      if (event.key === storageKey) {
+        setThemeState(isTheme(event.newValue) ? event.newValue : defaultTheme)
         return
       }
 
-      if (isTheme(event.newValue)) {
-        setThemeState(event.newValue)
-        return
+      if (event.key === paletteStorageKey) {
+        setPaletteState(
+          isPalette(event.newValue) ? event.newValue : defaultPalette
+        )
       }
-
-      setThemeState(defaultTheme)
     }
 
     window.addEventListener("storage", handleStorageChange)
@@ -202,14 +239,16 @@ export function ThemeProvider({
     return () => {
       window.removeEventListener("storage", handleStorageChange)
     }
-  }, [defaultTheme, storageKey])
+  }, [defaultTheme, defaultPalette, storageKey, paletteStorageKey])
 
   const value = React.useMemo(
     () => ({
       theme,
       setTheme,
+      palette,
+      setPalette,
     }),
-    [theme, setTheme]
+    [theme, setTheme, palette, setPalette]
   )
 
   return (

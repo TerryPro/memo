@@ -1,5 +1,22 @@
-# Logs
-logs
+# ===== 依赖 =====
+node_modules/
+
+# ===== 构建产物 =====
+dist/
+dist-ssr/
+*.local
+*.tsbuildinfo
+.vite/
+.turbo/
+.cache/
+
+# ===== Tauri / Rust =====
+# 编译输出与自动生成的 schema(子目录 src-tauri/.gitignore 也有同样规则)
+src-tauri/target/
+src-tauri/gen/schemas/
+
+# ===== 日志 =====
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -7,18 +24,29 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
-*.local
+# ===== 环境变量与密钥 =====
+.env
+.env.*
+!.env.example
 
-# Editor directories and files
+# ===== 本地参考资料(体积大,不纳入版本库)=====
+open-source/
+
+# ===== Agent / 本地工具状态 =====
+.pi/
+
+# ===== 编辑器与 IDE =====
 .vscode/*
 !.vscode/extensions.json
-.idea
-.DS_Store
+.idea/
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
+
+# ===== 系统临时文件 =====
+.DS_Store
+Thumbs.db
+Desktop.ini
+*~
